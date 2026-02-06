@@ -8,8 +8,6 @@ import base64
 import io
 import torch
 from diffusers import FluxPipeline
-from runpod.serverless.utils import rp_upload_file
-from runpod.serverless.utils import rp_download_model
 
 # Model configuration
 MODEL_ID = os.environ.get("MODEL_ID", "black-forest-labs/FLUX.1-dev")
