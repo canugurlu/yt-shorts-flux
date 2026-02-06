@@ -1,4 +1,4 @@
-name: Build and Push Docker Image to Runpod
+name: Build and Push Docker Image
 
 on:
   push:
@@ -18,35 +18,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Runpod CLI
-        run: |
-          curl -L https://github.com/runpod/runpodctl/releases/latest/download/runpodctl-linux-x64 -o runpodctl
-          chmod +x runpodctl
-          sudo mv runpodctl /usr/local/bin/runpodctl
-
-      - name: Verify Runpod CLI installation
-        run: |
-          runpodctl version || echo "runpodctl version check failed"
-
-      - name: Login to Runpod
-        run: |
-          echo "${{ secrets.RUNPOD_API_KEY }}" | tr -d '\r' | runpodctl login --api-key
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to GitHub Container Registry
+      - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Extract metadata for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/canugurlu/yt-shorts-flux
+          images: canugurlu/yt-shorts-flux
           tags: latest,${{ github.sha }}
 
       - name: Build and push Docker image
@@ -63,4 +48,4 @@ jobs:
       - name: Build complete
         run: |
           echo "Docker image built and pushed successfully!"
-          echo "Image: ghcr.io/canugurlu/yt-shorts-flux:latest"
+          echo "Image: docker.io/canugurlu/yt-shorts-flux:latest"
