@@ -31,7 +31,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: canugurlu/yt-shorts-flux
+          images: jaxnlindemann/yt-shorts-flux
           tags: latest,${{ github.sha }}
 
       - name: Build and push Docker image
@@ -48,4 +48,4 @@ jobs:
       - name: Build complete
         run: |
           echo "Docker image built and pushed successfully!"
-          echo "Image: docker.io/canugurlu/yt-shorts-flux:latest"
+          echo "Image: docker.io/jaxnlindemann/yt-shorts-flux:latest"
