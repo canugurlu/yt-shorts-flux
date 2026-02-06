@@ -13,7 +13,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     CUDA_VISIBLE_DEVICES=0 \
-    HF_TOKEN=${HF_TOKEN}
+    HF_HOME=/workspace/models \
+    TRANSFORMERS_CACHE=/workspace/models \
+    HF_HUB_CACHE=/workspace/models
 
 # Install Python and system dependencies
 RUN apt-get update && apt-get install -y \
@@ -23,14 +25,14 @@ RUN apt-get update && apt-get install -y \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Create working directory
+# Create working directory with model cache
 WORKDIR /workspace
 
 # Upgrade pip
 RUN pip3 install --upgrade pip
 
-# Install PyTorch with CUDA 12.1 support
-RUN pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+# Install PyTorch with CUDA 12.1 support (smaller package)
+RUN pip3 install torch --index-url https://download.pytorch.org/whl/cu121
 
 # Install core dependencies (without strict versions for compatibility)
 RUN pip3 install \
