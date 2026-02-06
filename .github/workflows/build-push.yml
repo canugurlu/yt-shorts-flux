@@ -1,0 +1,41 @@
+name: Build and Push Docker Image to Runpod
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Dockerfile'
+      - 'handler.py'
+      - 'requirements.txt'
+      - '.github/workflows/build-push.yml'
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Runpod CLI
+        run: |
+          curl -L https://github.com/runpod/runpodctl/releases/latest/download/runpodctl-linux-x64 -o runpodctl
+          chmod +x runpodctl
+          sudo mv runpodctl /usr/local/bin/
+
+      - name: Login to Runpod
+        run: |
+          echo "${{ secrets.RUNPOD_API_KEY }}" | runpodctl login --api-key
+
+      - name: Build and push Docker image
+        run: |
+          runpodctl build docker \
+            -f Dockerfile \
+            -t ghcr.io/canugurlu/yt-shorts-flux:latest \
+            --push
+
+      - name: Build complete
+        run: |
+          echo "Docker image built and pushed successfully!"
+          echo "Image: ghcr.io/canugurlu/yt-shorts-flux:latest"
