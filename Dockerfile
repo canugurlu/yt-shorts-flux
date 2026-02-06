@@ -3,13 +3,17 @@
 
 FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
 
+# Hugging Face token will be passed as build arg
+ARG HF_TOKEN
+
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    CUDA_VISIBLE_DEVICES=0
+    CUDA_VISIBLE_DEVICES=0 \
+    HF_TOKEN=${HF_TOKEN}
 
 # Install Python and system dependencies
 RUN apt-get update && apt-get install -y \
@@ -39,6 +43,9 @@ RUN pip3 install \
     pillow \
     numpy \
     compel
+
+# Login to Hugging Face (required for gated models)
+RUN huggingface-cli login --token ${HF_TOKEN}
 
 # Install Runpod serverless SDK
 RUN pip3 install runpod
