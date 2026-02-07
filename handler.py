@@ -6,8 +6,10 @@ YouTube Shorts T2I Generator
 import os
 import base64
 import io
+import gc
 import torch
 from diffusers import FluxPipeline
+from diffusers.utils import load_image
 
 # Model configuration
 MODEL_ID = os.environ.get("MODEL_ID", "black-forest-labs/FLUX.1-dev")
@@ -19,34 +21,45 @@ pipeline = None
 
 
 def load_model():
-    """Load FLUX.1-dev pipeline (called once on cold start)"""
+    """Load FLUX.1-dev pipeline with memory optimizations"""
     global pipeline
 
     print(f"Loading model: {MODEL_ID}")
 
+    # Memory optimization settings
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
+    # Load with reduced memory footprint
     pipeline = FluxPipeline.from_pretrained(
         MODEL_ID,
         torch_dtype=DTYPE,
         use_safetensors=True,
-    ).to(DEVICE)
+    )
 
-    # Enable memory optimizations
+    # Move to CPU first to avoid OOM during load
+    # Then enable optimizations before moving to GPU
+
+    # Enable CPU offloading for transformer components
+    pipeline.enable_model_cpu_offload()
+
+    # Enable sequential CPU offload (more aggressive)
+    # pipeline.enable_sequential_cpu_offload()
+
+    # Enable attention slicing (reduces memory at cost of speed)
     pipeline.enable_attention_slicing()
 
-    # Enable xformers if available
-    try:
-        pipeline.enable_xformers_memory_efficient_attention()
-    except Exception:
-        pass
+    # Enable vae slicing (process VAE in chunks)
+    pipeline.vae.enable_slicing()
+    pipeline.vae.enable_tiling()
 
-    print("Model loaded successfully")
+    print("Model loaded successfully with memory optimizations")
 
 
-def decode_base64_image(base64_string):
-    """Decode base64 string to bytes"""
-    if "base64," in base64_string:
-        base64_string = base64_string.split("base64,")[1]
-    return base64.b64decode(base64_string)
+def clear_cache():
+    """Clear GPU cache"""
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        gc.collect()
 
 
 def encode_image_to_base64(image_bytes):
@@ -63,29 +76,32 @@ def generate_images(prompt, num_images=1, width=832, height=1536,
     if pipeline is None:
         load_model()
 
+    # Clear cache before generation
+    clear_cache()
+
     # Set seed for reproducibility
     generator = None
     if seed is not None:
         generator = torch.Generator(device=DEVICE).manual_seed(seed)
 
-    # Generate images
-    print(f"Generating {num_images} images with prompt: {prompt[:100]}...")
-
-    output = pipeline(
-        prompt=[prompt] * num_images,
-        width=width,
-        height=height,
-        guidance_scale=guidance_scale,
-        num_inference_steps=num_inference_steps,
-        generator=generator,
-    )
-
-    images = output.images
-
-    # Convert to base64
+    # Generate images ONE AT A TIME to save memory
     results = []
-    for i, img in enumerate(images):
-        # Convert PIL image to bytes
+
+    for i in range(num_images):
+        print(f"Generating image {i+1}/{num_images}...")
+
+        output = pipeline(
+            prompt=prompt,
+            width=width,
+            height=height,
+            guidance_scale=guidance_scale,
+            num_inference_steps=num_inference_steps,
+            generator=generator,
+        )
+
+        img = output.images[0]
+
+        # Convert to base64
         img_bytes = io.BytesIO()
         img.save(img_bytes, format="PNG")
         img_bytes = img_bytes.getvalue()
@@ -96,6 +112,11 @@ def generate_images(prompt, num_images=1, width=832, height=1536,
             "width": width,
             "height": height,
         })
+
+        # Clear cache after each image
+        del output
+        del img
+        clear_cache()
 
     return results
 
@@ -141,6 +162,10 @@ def handler(event):
             "error": f"Dimensions must be divisible by 16. Got: {width}x{height}"
         }
 
+    # Limit num_images to prevent OOM
+    if num_images > 5:
+        num_images = 5
+
     # Generate images
     try:
         results = generate_images(
@@ -173,7 +198,7 @@ if __name__ == "__main__":
     test_event = {
         "input": {
             "prompt": "A cinematic vertical shot of a futuristic city at sunset, cyberpunk style, neon lights, highly detailed, 8k",
-            "num_images": 2,
+            "num_images": 1,
             "width": 832,
             "height": 1536,
         }
