@@ -1,8 +1,10 @@
 """
 Runpod Serverless Handler for FLUX.1-dev
 YouTube Shorts T2I Generator
-Quality Mode: Single image, maximum quality, no batch processing
-Note: No quantization - full bfloat16 for best quality
+VRAM Optimized for 24GB GPUs (A40, RTX 6000 Ada)
+- device_map="balanced" for efficient memory placement
+- VAE in fp16, rest in bfloat16
+- Aggressive attention slicing (slice_size=1)
 """
 
 import os
@@ -15,15 +17,13 @@ from diffusers import FluxPipeline
 
 # Model configuration
 MODEL_ID = os.environ.get("MODEL_ID", "black-forest-labs/FLUX.1-dev")
-DEVICE = torch.device("cuda")
-DTYPE = torch.bfloat16
 
 # Global pipeline variable (loaded once)
 pipeline = None
 
 
 def load_model():
-    """Load FLUX.1-dev pipeline - quality first, GPU-only memory optimizations"""
+    """Load FLUX.1-dev pipeline - VRAM optimized for 24GB GPUs"""
     global pipeline
 
     print(f"Loading model: {MODEL_ID}")
@@ -31,20 +31,21 @@ def load_model():
     # Memory optimization for single image generation
     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
-    # Load model - full precision for quality
+    # Load model with device_map for efficient memory placement
     pipeline = FluxPipeline.from_pretrained(
         MODEL_ID,
-        torch_dtype=DTYPE,
+        torch_dtype=torch.bfloat16,
         use_safetensors=True,
-    ).to(DEVICE)
+        device_map="balanced",  # Efficient device placement, no .to() needed
+    )
 
     # GPU memory optimizations
     pipeline.vae.enable_slicing()      # Process VAE in chunks
     pipeline.vae.enable_tiling()       # Tile-based VAE decode
-    pipeline.enable_attention_slicing()  # Slice attention computations
-    pipeline.transformer.enable_gradient_checkpointing()  # Reduce activation memory
+    pipeline.vae.to(torch.float16)     # VAE in fp16 for extra VRAM savings
+    pipeline.enable_attention_slicing(slice_size=1)  # Aggressive slicing
 
-    print("Model loaded successfully with GPU-only optimizations")
+    print("Model loaded successfully with VRAM optimizations")
 
 
 def clear_cache():
@@ -72,7 +73,7 @@ def generate_image(prompt, width=832, height=1536,
     # Set seed for reproducibility
     generator = None
     if seed is not None:
-        generator = torch.Generator(device=DEVICE).manual_seed(seed)
+        generator = torch.Generator(device="cuda").manual_seed(seed)
 
     print(f"Generating image: {prompt[:80]}...")
 
