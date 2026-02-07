@@ -2,6 +2,7 @@
 Runpod Serverless Handler for FLUX.1-dev
 YouTube Shorts T2I Generator
 Quality Mode: Single image, maximum quality, no batch processing
+Note: No quantization - full bfloat16 for best quality
 """
 
 import os
@@ -11,7 +12,6 @@ import gc
 import torch
 import runpod
 from diffusers import FluxPipeline
-from transformers import BitsAndBytesConfig
 
 # Model configuration
 MODEL_ID = os.environ.get("MODEL_ID", "black-forest-labs/FLUX.1-dev")
@@ -31,22 +31,14 @@ def load_model():
     # Memory optimization for single image generation
     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
-    # BitsAndBytes 8-bit quantization - ~6-8GB VRAM savings, minimal quality impact
-    bnb_config = BitsAndBytesConfig(
-        load_in_8bit=True,
-        bnb_8bit_compute_dtype=torch.bfloat16,
-        bnb_8bit_use_double_quant=True,
-    )
-
-    # Load model with quantization
+    # Load model - full precision for quality
     pipeline = FluxPipeline.from_pretrained(
         MODEL_ID,
         torch_dtype=DTYPE,
         use_safetensors=True,
-        quantization_config=bnb_config,
     ).to(DEVICE)
 
-    # GPU-only memory optimizations (no CPU offload)
+    # GPU memory optimizations
     pipeline.vae.enable_slicing()      # Process VAE in chunks
     pipeline.vae.enable_tiling()       # Tile-based VAE decode
     pipeline.enable_attention_slicing()  # Slice attention computations
