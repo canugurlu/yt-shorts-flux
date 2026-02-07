@@ -44,7 +44,9 @@ RUN pip3 install \
     safetensors \
     pillow \
     numpy \
-    compel
+    compel \
+    protobuf \
+    cbor2
 
 # Login to Hugging Face (required for gated models)
 RUN huggingface-cli login --token ${HF_TOKEN}
