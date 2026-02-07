@@ -3,7 +3,7 @@ Runpod Serverless Handler for FLUX.1-dev
 YouTube Shorts T2I Generator
 VRAM Optimized for 24GB GPUs (A40, RTX 6000 Ada)
 - device_map="balanced" for efficient memory placement
-- VAE in fp16, rest in bfloat16
+- All bfloat16 for type consistency
 - Aggressive attention slicing (slice_size=1)
 """
 
@@ -42,7 +42,7 @@ def load_model():
     # GPU memory optimizations
     pipeline.vae.enable_slicing()      # Process VAE in chunks
     pipeline.vae.enable_tiling()       # Tile-based VAE decode
-    pipeline.vae.to(torch.float16)     # VAE in fp16 for extra VRAM savings
+    # VAE stays in bfloat16 to match transformer dtype
     pipeline.enable_attention_slicing(slice_size=1)  # Aggressive slicing
 
     print("Model loaded successfully with VRAM optimizations")
