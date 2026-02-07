@@ -1,6 +1,7 @@
 """
 Runpod Serverless Handler for FLUX.1-dev
 YouTube Shorts T2I Generator
+Quality Mode: Single image, maximum quality, no batch processing
 """
 
 import os
@@ -9,11 +10,10 @@ import io
 import gc
 import torch
 from diffusers import FluxPipeline
-from diffusers.utils import load_image
 
 # Model configuration
 MODEL_ID = os.environ.get("MODEL_ID", "black-forest-labs/FLUX.1-dev")
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DEVICE = torch.device("cuda")
 DTYPE = torch.bfloat16
 
 # Global pipeline variable (loaded once)
@@ -21,45 +21,31 @@ pipeline = None
 
 
 def load_model():
-    """Load FLUX.1-dev pipeline with memory optimizations"""
+    """Load FLUX.1-dev pipeline - quality first, no CPU offload"""
     global pipeline
 
     print(f"Loading model: {MODEL_ID}")
 
-    # Memory optimization settings
+    # Memory optimization for single image generation
     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
-    # Load with reduced memory footprint
+    # Load model directly to GPU (no CPU offload - preserves quality and speed)
     pipeline = FluxPipeline.from_pretrained(
         MODEL_ID,
         torch_dtype=DTYPE,
         use_safetensors=True,
-    )
+    ).to(DEVICE)
 
-    # Move to CPU first to avoid OOM during load
-    # Then enable optimizations before moving to GPU
-
-    # Enable CPU offloading for transformer components
-    pipeline.enable_model_cpu_offload()
-
-    # Enable sequential CPU offload (more aggressive)
-    # pipeline.enable_sequential_cpu_offload()
-
-    # Enable attention slicing (reduces memory at cost of speed)
-    pipeline.enable_attention_slicing()
-
-    # Enable vae slicing (process VAE in chunks)
+    # VAE slicing only - doesn't affect quality, just processes in chunks
     pipeline.vae.enable_slicing()
-    pipeline.vae.enable_tiling()
 
-    print("Model loaded successfully with memory optimizations")
+    print("Model loaded successfully")
 
 
 def clear_cache():
     """Clear GPU cache"""
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-        gc.collect()
+    gc.collect()
+    torch.cuda.empty_cache()
 
 
 def encode_image_to_base64(image_bytes):
@@ -67,16 +53,15 @@ def encode_image_to_base64(image_bytes):
     return base64.b64encode(image_bytes).decode("utf-8")
 
 
-def generate_images(prompt, num_images=1, width=832, height=1536,
-                    guidance_scale=3.5, num_inference_steps=28,
-                    seed=None):
-    """Generate images using FLUX.1-dev"""
+def generate_image(prompt, width=832, height=1536,
+                   guidance_scale=3.5, num_inference_steps=28,
+                   seed=None):
+    """Generate SINGLE image using FLUX.1-dev - maximum quality"""
     global pipeline
 
     if pipeline is None:
         load_model()
 
-    # Clear cache before generation
     clear_cache()
 
     # Set seed for reproducibility
@@ -84,51 +69,41 @@ def generate_images(prompt, num_images=1, width=832, height=1536,
     if seed is not None:
         generator = torch.Generator(device=DEVICE).manual_seed(seed)
 
-    # Generate images ONE AT A TIME to save memory
-    results = []
+    print(f"Generating image: {prompt[:80]}...")
 
-    for i in range(num_images):
-        print(f"Generating image {i+1}/{num_images}...")
+    # Single image generation - full quality
+    output = pipeline(
+        prompt=prompt,
+        width=width,
+        height=height,
+        guidance_scale=guidance_scale,
+        num_inference_steps=num_inference_steps,
+        generator=generator,
+    )
 
-        output = pipeline(
-            prompt=prompt,
-            width=width,
-            height=height,
-            guidance_scale=guidance_scale,
-            num_inference_steps=num_inference_steps,
-            generator=generator,
-        )
+    img = output.images[0]
 
-        img = output.images[0]
+    # Convert to base64
+    img_bytes = io.BytesIO()
+    img.save(img_bytes, format="PNG")
+    img_bytes = img_bytes.getvalue()
 
-        # Convert to base64
-        img_bytes = io.BytesIO()
-        img.save(img_bytes, format="PNG")
-        img_bytes = img_bytes.getvalue()
+    clear_cache()
 
-        results.append({
-            "index": i,
-            "image_base64": encode_image_to_base64(img_bytes),
-            "width": width,
-            "height": height,
-        })
-
-        # Clear cache after each image
-        del output
-        del img
-        clear_cache()
-
-    return results
+    return {
+        "image_base64": encode_image_to_base64(img_bytes),
+        "width": width,
+        "height": height,
+    }
 
 
 def handler(event):
     """
-    Runpod serverless handler
+    Runpod serverless handler - SINGLE IMAGE ONLY
 
-    Expected input:
+    Input:
     {
         "prompt": "A cinematic vertical shot of...",
-        "num_images": 5,
         "width": 832,
         "height": 1536,
         "guidance_scale": 3.5,
@@ -140,16 +115,12 @@ def handler(event):
     if pipeline is None:
         load_model()
 
-    # Parse input
     input_data = event.get("input", {})
 
     prompt = input_data.get("prompt")
     if not prompt:
-        return {
-            "error": "Missing required parameter: prompt"
-        }
+        return {"error": "Missing required parameter: prompt"}
 
-    num_images = input_data.get("num_images", 5)
     width = input_data.get("width", 832)
     height = input_data.get("height", 1536)
     guidance_scale = input_data.get("guidance_scale", 3.5)
@@ -158,19 +129,11 @@ def handler(event):
 
     # Validate dimensions (must be divisible by 16 for FLUX)
     if width % 16 != 0 or height % 16 != 0:
-        return {
-            "error": f"Dimensions must be divisible by 16. Got: {width}x{height}"
-        }
+        return {"error": f"Dimensions must be divisible by 16. Got: {width}x{height}"}
 
-    # Limit num_images to prevent OOM
-    if num_images > 5:
-        num_images = 5
-
-    # Generate images
     try:
-        results = generate_images(
+        result = generate_image(
             prompt=prompt,
-            num_images=num_images,
             width=width,
             height=height,
             guidance_scale=guidance_scale,
@@ -182,8 +145,7 @@ def handler(event):
             "status": "success",
             "prompt": prompt,
             "model": MODEL_ID,
-            "images": results,
-            "count": len(results),
+            "image": result,
         }
 
     except Exception as e:
@@ -191,6 +153,3 @@ def handler(event):
             "status": "error",
             "error": str(e),
         }
-
-# Runpod serverless will call handler() directly
-# No __main__ block needed
