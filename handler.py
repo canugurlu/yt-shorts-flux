@@ -192,17 +192,5 @@ def handler(event):
             "error": str(e),
         }
 
-
-# For local testing
-if __name__ == "__main__":
-    test_event = {
-        "input": {
-            "prompt": "A cinematic vertical shot of a futuristic city at sunset, cyberpunk style, neon lights, highly detailed, 8k",
-            "num_images": 1,
-            "width": 832,
-            "height": 1536,
-        }
-    }
-
-    result = handler(test_event)
-    print(f"Generated {result.get('count', 0)} images")
+# Runpod serverless will call handler() directly
+# No __main__ block needed
