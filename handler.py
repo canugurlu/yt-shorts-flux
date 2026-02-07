@@ -9,6 +9,7 @@ import base64
 import io
 import gc
 import torch
+import runpod
 from diffusers import FluxPipeline
 
 # Model configuration
@@ -97,7 +98,7 @@ def generate_image(prompt, width=832, height=1536,
     }
 
 
-def handler(event):
+def handler(job):
     """
     Runpod serverless handler - SINGLE IMAGE ONLY
 
@@ -115,7 +116,7 @@ def handler(event):
     if pipeline is None:
         load_model()
 
-    input_data = event.get("input", {})
+    input_data = job.get("input", {})
 
     prompt = input_data.get("prompt")
     if not prompt:
@@ -153,3 +154,7 @@ def handler(event):
             "status": "error",
             "error": str(e),
         }
+
+
+# Start the Runpod serverless worker
+runpod.serverless.start({"handler": handler})
