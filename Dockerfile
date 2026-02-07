@@ -14,8 +14,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     CUDA_VISIBLE_DEVICES=0 \
     HF_HOME=/workspace/models \
-    TRANSFORMERS_CACHE=/workspace/models \
-    HF_HUB_CACHE=/workspace/models
+    PYTHONWARNINGS="ignore::FutureWarning"
 
 # Install Python and system dependencies
 RUN apt-get update && apt-get install -y \
