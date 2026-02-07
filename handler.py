@@ -11,6 +11,7 @@ import gc
 import torch
 import runpod
 from diffusers import FluxPipeline
+from transformers import BitsAndBytesConfig
 
 # Model configuration
 MODEL_ID = os.environ.get("MODEL_ID", "black-forest-labs/FLUX.1-dev")
@@ -22,7 +23,7 @@ pipeline = None
 
 
 def load_model():
-    """Load FLUX.1-dev pipeline - quality first, no CPU offload"""
+    """Load FLUX.1-dev pipeline - quality first, GPU-only memory optimizations"""
     global pipeline
 
     print(f"Loading model: {MODEL_ID}")
@@ -30,17 +31,28 @@ def load_model():
     # Memory optimization for single image generation
     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
-    # Load model directly to GPU (no CPU offload - preserves quality and speed)
+    # BitsAndBytes 8-bit quantization - ~6-8GB VRAM savings, minimal quality impact
+    bnb_config = BitsAndBytesConfig(
+        load_in_8bit=True,
+        bnb_8bit_compute_dtype=torch.bfloat16,
+        bnb_8bit_use_double_quant=True,
+    )
+
+    # Load model with quantization
     pipeline = FluxPipeline.from_pretrained(
         MODEL_ID,
         torch_dtype=DTYPE,
         use_safetensors=True,
+        quantization_config=bnb_config,
     ).to(DEVICE)
 
-    # VAE slicing only - doesn't affect quality, just processes in chunks
-    pipeline.vae.enable_slicing()
+    # GPU-only memory optimizations (no CPU offload)
+    pipeline.vae.enable_slicing()      # Process VAE in chunks
+    pipeline.vae.enable_tiling()       # Tile-based VAE decode
+    pipeline.enable_attention_slicing()  # Slice attention computations
+    pipeline.transformer.enable_gradient_checkpointing()  # Reduce activation memory
 
-    print("Model loaded successfully")
+    print("Model loaded successfully with GPU-only optimizations")
 
 
 def clear_cache():

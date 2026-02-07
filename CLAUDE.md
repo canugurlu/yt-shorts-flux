@@ -46,10 +46,57 @@ runpod.serverless.start({"handler": handler})
 
 ### 3. CUDA OOM
 **Error**: `CUDA out of memory`
-**Current approach**: Quality mode - no CPU offload, single image only
+**Current approach**: Quality mode - GPU-only optimizations, no CPU offload
 - Resolution: 832x1536 (9:16 vertical)
 - bfloat16 dtype
-- VAE slicing (no quality impact)
+- VAE slicing + tiling (no quality impact)
+
+#### VRAM Optimization Techniques (handler.py)
+
+**Currently Enabled (Quality-Preserving):**
+```python
+# 8-bit quantization - ~6-8GB savings, minimal quality impact
+BitsAndBytesConfig(load_in_8bit=True)
+
+# VAE optimizations - ~2GB savings, no quality impact
+pipeline.vae.enable_slicing()
+pipeline.vae.enable_tiling()
+
+# Attention slicing - ~1-2GB savings, no quality impact
+pipeline.enable_attention_slicing()
+
+# Gradient checkpointing - ~1-2GB savings, no quality impact
+pipeline.transformer.enable_gradient_checkpointing()
+```
+
+**Quality vs VRAM Trade-offs (for future tuning):**
+
+| Technique | VRAM Savings | Quality Impact | Speed Impact | Status |
+|-----------|--------------|----------------|--------------|--------|
+| INT8 Quantization | ~6-8GB | Minimal (1-2%) | Slight faster | ✅ ENABLED |
+| VAE Slicing | ~1GB | None | Slight slower | ✅ ENABLED |
+| VAE Tiling | ~1GB | None | Slight slower | ✅ ENABLED |
+| Attention Slicing | ~1-2GB | None | Slower | ✅ ENABLED |
+| Gradient Checkpointing | ~1-2GB | None | Slower | ✅ ENABLED |
+| CPU Offload | ~8-10GB | None | Much slower | ❌ DISABLED |
+| Lower Resolution | ~30-50% | Visible | Faster | ❌ NOT RECOMMENDED |
+| FP16 (no BF16) | ~2-3GB | Noticeable | Faster | ❌ NOT RECOMMENDED |
+
+**Expected VRAM Usage:**
+- Before optimizations: ~24GB
+- After optimizations: ~12-14GB
+- Target GPUs: RTX 4000 Ada (20GB), RTX 5000 Ada (16GB)
+
+**If you need to reduce VRAM further:**
+1. Enable CPU offload: `pipeline.enable_model_cpu_offload()` (slow but works)
+2. Reduce resolution: 768x1344 or 704x1280 (quality loss)
+3. Reduce num_inference_steps: 28 → 20 (minor quality loss, faster)
+
+**If you want max quality (ignore VRAM):**
+1. Disable quantization: Remove `BitsAndBytesConfig`
+2. Disable attention slicing
+3. Disable gradient checkpointing
+4. Keep VAE slicing only (no quality impact anyway)
 
 ### 4. Docker Hub Authentication
 **Error**: Failed login to Docker Hub

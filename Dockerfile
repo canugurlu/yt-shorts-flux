@@ -45,7 +45,8 @@ RUN pip3 install \
     numpy \
     compel \
     protobuf \
-    cbor2
+    cbor2 \
+    bitsandbytes
 
 # Login to Hugging Face (required for gated models)
 RUN huggingface-cli login --token ${HF_TOKEN}
