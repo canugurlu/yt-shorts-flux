@@ -59,7 +59,7 @@ def encode_image_to_base64(image_bytes):
     return base64.b64encode(image_bytes).decode("utf-8")
 
 
-def generate_image(prompt, width=832, height=1536,
+def generate_image(prompt, width=640, height=1152,
                    guidance_scale=3.5, num_inference_steps=28,
                    seed=None):
     """Generate SINGLE image using FLUX.1-dev - maximum quality"""
@@ -69,6 +69,10 @@ def generate_image(prompt, width=832, height=1536,
         load_model()
 
     clear_cache()
+
+    # Force aggressive cache clearing before inference
+    torch.cuda.empty_cache()
+    gc.collect()
 
     # Set seed for reproducibility
     generator = None
