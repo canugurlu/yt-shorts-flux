@@ -4,7 +4,7 @@ YouTube Shorts T2I Generator
 VRAM Optimized for 24GB GPUs (A40, RTX 6000 Ada)
 - device_map="balanced" for efficient memory placement
 - All bfloat16 for type consistency
-- Aggressive attention slicing (slice_size=1)
+- Resolution: 832x1536 (64 divisible, 9:16 aspect ratio)
 """
 
 import os
@@ -39,11 +39,10 @@ def load_model():
         device_map="balanced",  # Efficient device placement, no .to() needed
     )
 
-    # GPU memory optimizations
-    pipeline.vae.enable_slicing()      # Process VAE in chunks
-    pipeline.vae.enable_tiling()       # Tile-based VAE decode
-    # VAE stays in bfloat16 to match transformer dtype
-    pipeline.enable_attention_slicing(slice_size=1)  # Aggressive slicing
+    # GPU memory optimizations for 24GB GPUs
+    pipeline.vae.enable_slicing()      # Process VAE in chunks (saves ~2-3GB)
+    pipeline.vae.enable_tiling()       # Tile-based VAE decode (saves ~1-2GB)
+    pipeline.enable_attention_slicing(slice_size=2)  # Moderate slicing (saves ~2-4GB)
 
     print("Model loaded successfully with VRAM optimizations")
 
@@ -59,7 +58,7 @@ def encode_image_to_base64(image_bytes):
     return base64.b64encode(image_bytes).decode("utf-8")
 
 
-def generate_image(prompt, width=640, height=1152,
+def generate_image(prompt, width=832, height=1536,
                    guidance_scale=3.5, num_inference_steps=28,
                    seed=None):
     """Generate SINGLE image using FLUX.1-dev - maximum quality"""
@@ -109,7 +108,7 @@ def generate_image(prompt, width=640, height=1152,
 
 def handler(job):
     """
-    Runpod serverless handler - SINGLE IMAGE ONLY
+    Runpod serverless handler - SINGLE IMAGE
 
     Input:
     {
